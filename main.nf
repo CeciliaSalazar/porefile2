@@ -138,11 +138,19 @@ process ExtractSpeciesSeqs {
   '''
   set -euo pipefail
 
+  # Exportar la ruta para que Python la lea desde el entorno (evita problemas de expansión)
+  export READINFO="${readinfo_file}"
+
   # 1) Obtener IDs con rango species (autodetección de delimitador y columnas)
   python3 - << 'PY' > species.ids
-import sys, csv, re
+import os, sys, csv, re
 
-readinfo = "${readinfo_file}"
+readinfo = os.environ.get("READINFO")
+
+# Si no hay ruta o el archivo no existe, salir limpio (sin romper el pipeline)
+if not readinfo or not os.path.exists(readinfo):
+    sys.exit(0)
+
 rank_headers = re.compile(r'^(rank|tax_?rank|level)$', re.IGNORECASE)
 species_pat  = re.compile(r'^species$', re.IGNORECASE)
 
@@ -216,6 +224,7 @@ PY
   touch "${sample_id}.species.fa"
   '''
 }
+
 
 workflow {
   GetVersions()
