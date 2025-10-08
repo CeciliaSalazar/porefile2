@@ -8,27 +8,27 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-  shell:
+  script:
   '''
   set -euo pipefail
 
-  # 1) IDs con flag [S] en .read_info (tab-delimited; col 1 = read id)
+  # 1) Read IDs with [S] flag from .read_info (tab-delimited; first column = read id)
   awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
     "!{readinfo_file}" > species.ids
 
-  # Si no hay IDs, salida vacía limpia
+  # If no IDs, create empty output and exit cleanly
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar FASTA por esos IDs (normaliza encabezados al token antes de espacio, | o /)
+  # 2) Filter FASTA by those IDs (normalize headers to token before space, | or /)
   awk '
     function norm(s,t){
       t=s
-      sub(/[ \t].*$/, "", t)
-      sub(/\|.*$/,   "", t)
-      sub(/\/.*$/,   "", t)
+      sub(/[ \t].*$/, "", t)   # cut at first space/tab
+      sub(/\|.*$/,   "", t)    # cut at first |
+      sub(/\/.*$/,   "", t)    # cut at first /
       return t
     }
     BEGIN{
