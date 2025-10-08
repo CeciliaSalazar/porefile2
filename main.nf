@@ -127,6 +127,7 @@ include {QCheck} from './workflows/QCheckWorkflow'
  */
 process ExtractSpeciesSeqs {
   tag "$sample_id"
+  publishDir "${params.outdir}/Species_Seqs", mode: 'copy', overwrite: true
 
   input:
     tuple val(sample_id), path(fasta_file), path(readinfo_file)
@@ -146,13 +147,11 @@ process ExtractSpeciesSeqs {
 import os, sys, csv, re
 
 readinfo = os.environ.get("READINFO")
-
-# Si no hay ruta o el archivo no existe, salir limpio (sin romper el pipeline)
 if not readinfo or not os.path.exists(readinfo):
     sys.exit(0)
 
 rank_headers = re.compile(r'^(rank|tax_?rank|level)$', re.IGNORECASE)
-species_pat  = re.compile(r'^species$', re.IGNORECASE)
+species_start = re.compile(r'^species', re.IGNORECASE)  # acepta "species", "Species (…)", etc.
 
 with open(readinfo, newline="") as f:
     sample = f.read(2048)
@@ -172,9 +171,9 @@ if not rows:
 header = [h.strip() for h in rows[0]]
 hl = [h.lower() for h in header]
 
-# Columna de ID (prioriza campos habituales)
+# Columna de ID (agrego 'readname' y 'name' como alternativas)
 id_idx = None
-for cand in ('read_id','readid','id','read'):
+for cand in ('read_id','readid','id','read','readname','name'):
     if cand in hl:
         id_idx = hl.index(cand)
         break
@@ -197,7 +196,7 @@ for row in rows[1:]:
         r = row[rank_idx].strip()
     except IndexError:
         continue
-    if species_pat.match(r):
+    if species_start.match(r):
         try:
             rid = row[id_idx].strip()
         except IndexError:
