@@ -9,34 +9,29 @@ process ExtractSpeciesSeqs {
   output:
   tuple val(sample_id), path("${sample_id}.species.fa")
 
-  /*
-   .read_info format (TAB-delimited) e.g.:
-     col1 = read_id
-     col2 = rank letter (e.g. S, G, F, ...)
-     a taxonomy string where species lines include “[S] …”
-   We keep rows where col2 == "S" OR the line contains "[S]".
-  */
-
-  shell:
-  '''
+  script:
+  """
   set -euo pipefail
 
-  # 1) Collect species-level IDs
+  # 1) Read IDs with species-level classification:
+  #    - .read_info is TAB-delimited
+  #    - Col1 = read id, Col2 = rank code (S for species)
+  #    - Also accept the presence of "[S]" anywhere in the line
   awk -F '\t' 'NR>1 && ($2=="S" || index($0,"[S]")>0){
     id=$1
     sub(/^>/,"",id)
     gsub(/^[ \t]+|[ \t]+$/,"",id)
-    if(id!="") print id
+    if (id!="") print id
   }' "!{readinfo_file}" > species.ids
 
-  # No IDs -> empty output and exit cleanly
-  if ! grep -qve "^[[:space:]]*$" species.ids 2>/dev/null; then
+  # If there are no IDs, emit empty fasta and exit cleanly
+  if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
-    echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=0 sequences_written=0 (no species-level)" >&2
+    echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=0 sequences_written=0 (no species-level rows)" >&2
     exit 0
   fi
 
-  # 2) Filter FASTA by those IDs (normalize headers)
+  # 2) Filter the FASTA using normalized matching on IDs
   awk '
     function norm(s,t){
       t=s
@@ -64,8 +59,8 @@ process ExtractSpeciesSeqs {
     { if(keep) print $0 }
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
-  n_ids=$(grep -cvE "^[[:space:]]*$" species.ids || true)
-  n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
+  n_ids=$(grep -cvE '^[[:space:]]*$' species.ids || true)
+  n_seq=$(grep -c '^>' "!{sample_id}.species.fa" || true)
   echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=${n_ids} sequences_written=${n_seq}" >&2
-  '''
+  """
 }
