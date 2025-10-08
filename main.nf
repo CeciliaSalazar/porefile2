@@ -122,12 +122,12 @@ include {QCheck} from './workflows/QCheckWorkflow'
 
 /*
  * NUEVO: Extrae todas las lecturas clasificadas a nivel especie y genera ${sample}.species.fa
- * Asume que el archivo read_info contiene columnas de ID (read_id/readid/id/read)
- * y de rango (rank/tax_rank/level), y filtra filas cuyo rango sea "species".
+ * Asume que el archivo read_info contiene columnas de ID (read_id/readid/id/read/qname/seqid)
+ * y de rango (rank/tax_rank/level), y filtra filas cuyo rango sea "species" o código "S".
  */
 process ExtractSpeciesSeqs {
   tag "$sample_id"
-  publishDir "${params.outdir}/Species_Seqs", mode: 'copy', overwrite: true
+  publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
 
   input:
     tuple val(sample_id), path(fasta_file), path(readinfo_file)
@@ -135,7 +135,7 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-   shell:
+  shell:
   '''
   set -euo pipefail
 
@@ -172,7 +172,7 @@ if not rows:
 header = [h.strip() for h in rows[0]]
 hl = [h.lower() for h in header]
 
-# Columna de ID: considerar alias comunes
+# Columna de ID: alias comunes
 id_idx = None
 for cand in ('read_id','readid','id','read','readname','name','qname','seqid','seq_id'):
     if cand in hl:
@@ -188,7 +188,6 @@ for i,h in enumerate(header):
         rank_idx = i
         break
 if rank_idx is None:
-    # si no hay rank explícito, salir (no filtramos nada)
     sys.exit(0)
 
 n = 0
@@ -205,7 +204,6 @@ for row in rows[1:]:
         except IndexError:
             continue
         if rid:
-            # quitar posible '>' y espacios
             if rid.startswith('>'):
                 rid = rid[1:]
             rid = rid.strip()
@@ -213,20 +211,16 @@ for row in rows[1:]:
                 print(rid)
                 n += 1
 
-# log a stderr para depuración
 print(f"#species_ids={n}", file=sys.stderr)
 PY
 
-  # Si no se detectaron IDs, aseguramos un archivo vacío y salimos
+  # Si no se detectaron IDs, asegurar archivo vacío y salir
   if ! grep -qve '^\\s*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
   # 2) Filtrar del FASTA con normalización de IDs
-  #    Normalizamos tanto el ID buscado como el del header FASTA:
-  #    - quitamos todo desde el primer espacio
-  #    - quitamos todo desde el primer '|' y '/'
   awk '
     function norm(s,    t){
       t=s
@@ -255,7 +249,7 @@ PY
   # Asegurar existencia del archivo (aunque esté vacío)
   touch "!{sample_id}.species.fa"
 
-  # Log sencillo: cuántas IDs de especie y cuántas secuencias se escribieron
+  # Log: cuántas IDs y cuántas secuencias escritas
   if [ -s species.ids ]; then
     n_ids=$(grep -cvE "^\\s*$" species.ids || true)
   else
@@ -264,6 +258,7 @@ PY
   n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
   echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" 1>&2
   '''
+}
 
 
 workflow {
