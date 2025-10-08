@@ -124,7 +124,7 @@ include { QCheck      } from './workflows/QCheckWorkflow'
 
 // NEW: species-level sequence extraction (module file)
 // (Make sure modules/ExtractSpeciesSeqs.nf exists)
-include { ExtractSpeciesSeqs } from './modules/ExtractSpeciesSeqs.nf'
+include { ExtractSpeciesSeqs } from './modules/ExtractSpeciesSeqs'
 
 // -------------------------
 // Workflow
@@ -195,18 +195,18 @@ workflow {
   ComputeAbundances.out.counts .collectFile(storeDir: "$params.outdir/")
   ComputeAbundances.out.taxcla .collectFile(storeDir: "$params.outdir/")
 
- // === NUEVO BLOQUE: emparejar FASTA con read_info y extraer secuencias a nivel especie ===
-  fasta_ch
-    .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
-    .set{ fasta_readinfo_ch }
+// Pair per-sample FASTA with its .read_info
+fasta_ch
+  .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
+  .set{ fasta_readinfo_ch }
 
-  ExtractSpeciesSeqs( fasta_readinfo_ch )
+ExtractSpeciesSeqs( fasta_readinfo_ch )
 
-  ExtractSpeciesSeqs.out
-    .collectFile(storeDir: "$params.outdir/Species_Seqs") { sample_id, file ->
-      [ "${sample_id}.species.fa", file ]
-    }
-  // === FIN BLOQUE NUEVO ===
+ExtractSpeciesSeqs.out
+  .collectFile(storeDir: "$params.outdir/Species_Seqs") { sample_id, file ->
+    [ "${sample_id}.species.fa", file ]
+  }
+
 
 
 
