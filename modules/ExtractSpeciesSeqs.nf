@@ -1,4 +1,4 @@
-process ExtractSpeciesSeqs {
+process 'ExtractSpeciesSeqs' {
 
   tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
@@ -9,7 +9,7 @@ process ExtractSpeciesSeqs {
   output:
   tuple val(sample_id), path("${sample_id}.species.fa")
 
-  script:
+  shell:
   '''
   set -euo pipefail
 
