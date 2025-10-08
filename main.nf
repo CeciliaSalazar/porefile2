@@ -49,7 +49,7 @@ if (params.help) {
 // Validation of parameters
 def parameters_expected = [
   'help',
-  'fq', 
+  'fq',
   'outdir',
   'noSpeciesPolishing','no-species-polishing',
   'lowAbundanceThreshold','low-abundance-threshold',
@@ -121,12 +121,11 @@ include {QFilt} from './workflows/QFiltWorkflow'
 include {QCheck} from './workflows/QCheckWorkflow'
 
 /*
- * NUEVO: Extrae todas las lecturas clasificadas a nivel especie y genera ${sample}.species.fa
- * Asume que el archivo read_info contiene columnas de ID (read_id/readid/id/read/qname/seqid)
- * y de rango (rank/tax_rank/level), y filtra filas cuyo rango sea "species" o código "S".
+ * Extrae lecturas clasificadas a nivel especie (flag "[S]" en .read_info)
+ * y genera ${sample}.species.fa. Asume .read_info TAB-delimitado con ID en 1ª columna.
  */
 process ExtractSpeciesSeqs {
-  tag "$sample_id"
+  tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
 
   input:
@@ -135,25 +134,23 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-  shell:
-  '''
+  script:
+  """
   set -euo pipefail
 
-  # 1) Extraer IDs con flag [S] desde el .read_info
-  #    - Asume TAB como delimitador
-  #    - La 1ª columna es el ID de lectura
-  awk -F "\\t" 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
-    "!{readinfo_file}" > species.ids
+  # 1) IDs de especie a partir de .read_info (flag [S], 1ª columna = ID)
+  awk -F '\\t' 'NR==1{next} /\\[S\\]/{id=\$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
+    "${readinfo_file}" > species.ids
 
-  # Si no hay IDs, generar archivo vacío y salir limpio
-  if ! grep -qve '^\\s*$' species.ids 2>/dev/null; then
-    : > "!{sample_id}.species.fa"
+  # Si no hay IDs, crear archivo vacío y salir limpio
+  if ! grep -qve '^\\s*\$' species.ids 2>/dev/null; then
+    : > "${sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar el FASTA por esos IDs (normalizando encabezados)
+  # 2) Filtrar FASTA por IDs (normaliza encabezados para emparejar)
   awk '
-    function norm(s,t){
+    function norm(s, t){
       t=s
       sub(/[ \\t].*$/, "", t)   # corta en primer espacio
       sub(/\\|.*$/,   "", t)    # corta en primer |
@@ -169,24 +166,16 @@ process ExtractSpeciesSeqs {
       close("species.ids")
       keep=0
     }
-    /^>/{
-      hdr = substr($0,2)
-      hnorm = norm(hdr)
-      keep = (hnorm in ids)
-    }
-    { if(keep) print $0 }
-  ' "!{fasta_file}" > "!{sample_id}.species.fa"
+    /^>/{ hdr = substr(\$0,2); hnorm = norm(hdr); keep = (hnorm in ids) }
+    { if(keep) print \$0 }
+  ' "${fasta_file}" > "${sample_id}.species.fa"
 
-  # Asegurar existencia del archivo (aunque esté vacío)
-  : > "!{sample_id}.species.fa"
-
-  # Log de conteos
-  n_ids=$(grep -cvE "^\\s*$" species.ids || true)
-  n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
-  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" >&2
-  '''
+  # Log
+  n_ids=\$(grep -cvE '^\\s*\$' species.ids || true)
+  n_seq=\$(grep -c '^>' "${sample_id}.species.fa" || true)
+  echo "[ExtractSpeciesSeqs] sample=${sample_id} species_ids=\$n_ids sequences_written=\$n_seq" >&2
+  """
 }
-
 
 workflow {
   GetVersions()
@@ -237,7 +226,7 @@ workflow {
   // Publish read taxonomy assignments
   base_read_assingments_ch
       .collectFile(storeDir: "$params.outdir/Read_Assignments") {
-          val, file -> 
+          val, file ->
           [ "${val}.read_info" , file ]
       }
 
@@ -246,11 +235,11 @@ workflow {
     .map{val, file -> file}
     .collect()
     .set{ all_read_assignments }
-  
-  ComputeAbundances( 
-    all_read_assignments, 
-    silva_synonyms_ch, 
-    !params.noSpeciesPolishing 
+
+  ComputeAbundances(
+    all_read_assignments,
+    silva_synonyms_ch,
+    !params.noSpeciesPolishing
   )
 
   // Publish taxa counts and classification
@@ -259,7 +248,7 @@ workflow {
   ComputeAbundances.out.taxcla
     .collectFile(storeDir: "$params.outdir/")
 
-  // NUEVO: Emparejar FASTA por muestra con read_info y extraer secuencias a nivel especie
+  // Emparejar FASTA por muestra con read_info y extraer secuencias a nivel especie
   fasta_ch
     .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
     .set{ fasta_readinfo_ch }
@@ -273,13 +262,13 @@ workflow {
 
   // Polish sub-Workflow
   if (!params.noSpeciesPolishing){
-      Polish( 
-        fasta_ch, 
-        silva_fasta_ch, 
-        silva_synonyms_ch, 
+      Polish(
+        fasta_ch,
+        silva_fasta_ch,
+        silva_synonyms_ch,
         base_read_assingments_ch,
         ComputeAbundances.out.silva_ids,
-        ComputeAbundances.out.read_ids 
+        ComputeAbundances.out.read_ids
       )
 
       // Publish polished taxa counts and classification
@@ -294,8 +283,6 @@ workflow {
   }
 }
 
-
-
 def sayHi(){
   log.info """ ____   __  ____  ____  ____  __  __    ____ 
 (  _ \\ /  \\(  _ \\(  __)(  __)(  )(  )  (  __)
@@ -305,7 +292,6 @@ def sayHi(){
 ... A full-length 16S profiling Pipeline ....
 ---------------------------------------------"""
 }
-
 
 def helpMessage() {
     log.info """
@@ -407,7 +393,6 @@ def helpMessage() {
 
     """.stripIndent()
 }
-
 
 def helloParameters(){
 
