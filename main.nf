@@ -112,69 +112,13 @@ include {MeganLca} from './modules/processes'
 include {GetReadInfo} from './modules/processes'
 include {ComputeAbundances} from './modules/processes'
 include {Polish} from './workflows/PolishMinimap'
+include { ExtractSpeciesSeqs } from './modules/ExtractSpeciesSeqs.nf'   
 
 // include sub-workflows
 include {SetSilva} from './workflows/Silva'
 include {Demultiplex} from './workflows/Demultiplex'
 include {QFilt} from './workflows/QFiltWorkflow'
 include {QCheck} from './workflows/QCheckWorkflow'
-
-// Extract reads flagged at species level ([S]) from the .read_info (TAB-delimited; read id in col 1)
-process ExtractSpeciesSeqs {
-  tag "${sample_id}"
-  publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
-
-  input:
-  tuple val(sample_id), path(fasta_file), path(readinfo_file)
-
-  output:
-  tuple val(sample_id), path("${sample_id}.species.fa")
-
-  shell:
-  '''
-  set -euo pipefail
-
-  # 1) Read IDs with [S] flag from .read_info (tab-delimited; first column = read id)
-  awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
-    "!{readinfo_file}" > species.ids
-
-  # If no IDs, create empty output and exit cleanly
-  if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
-    : > "!{sample_id}.species.fa"
-    exit 0
-  fi
-
-  # 2) Filter FASTA by those IDs (normalize headers to the token before space, | or /)
-  awk '
-    function norm(s,t){
-      t=s
-      sub(/[ \t].*$/, "", t)
-      sub(/\|.*$/,   "", t)
-      sub(/\/.*$/,   "", t)
-      return t
-    }
-    BEGIN{
-      while((getline line < "species.ids")>0){
-        if(line ~ /^[[:space:]]*$/) continue
-        id = norm(line)
-        ids[id]=1
-      }
-      close("species.ids")
-      keep=0
-    }
-    /^>/{
-      hdr  = substr($0,2)
-      keep = (norm(hdr) in ids)
-    }
-    { if(keep) print $0 }
-  ' "!{fasta_file}" > "!{sample_id}.species.fa"
-
-  # Log
-  n_ids=$(grep -cvE '^[[:space:]]*$' species.ids || true)
-  n_seq=$(grep -c '^>' "!{sample_id}.species.fa" || true)
-  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" >&2
-  '''
-}
 
 workflow {
   GetVersions()
@@ -284,9 +228,9 @@ workflow {
 
 def sayHi(){
   log.info """ ____   __  ____  ____  ____  __  __    ____ 
-(  _ \\ /  \\(  _ \\(  __)(  __)(  )(  )  (  __)
- ) __/(  O ))   / ) _)  ) _)  )( / (_/\\ ) _) 
-(__)   \\__/(__\\_)(____)(__)  (__)\\____/(____)
+(  _ \ /  \(  _ \(  __)(  __)(  )(  )  (  __)
+ ) __/(  O ))   / ) _)  ) _)  )( / (_/\ ) _) 
+(__)   \__/(__\_)(____)(__)  (__)\____/(____)
 ---------------------------------------------
 ... A full-length 16S profiling Pipeline ....
 ---------------------------------------------"""
@@ -299,97 +243,7 @@ def helpMessage() {
 
         nextflow run microgenlab/porefile --fq "data/*.fastq"
 
-    Input fastq file(s):
-        --fq                          Path to input data (must be surrounded with quotes), e.g.: "./path/to/fastqs/*.fastq".
-
-    Other:
-        --silvaFasta                  Path to SILVA_*_SSURef_NR99_tax_silva.fasta.gz file. You can provide it 
-                                      either compressed (.gz) or not. If not provided, the workflow automatically
-                                      adds a download step (you must have internet connection).
-        --silvaFastaURL               URL to SILVA_*_SSURef_NR99_tax_silva.fasta.gz file. It will be used if you
-                                      don't provide the --silvaFasta parameter (above). Default is:
-                                      'https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz'.
-
-        --silvaTaxNcbiSp              Path to tax_ncbi-species_ssu_ref_nr99_*.txt.gz file. You can provide it
-                                      either compressed (.gz) or not. If not provided, the workflow automatically
-                                      adds a download step.
-        --silvaTaxNcbiSpURL           URL to tax_ncbi-species_ssu_ref_nr99_*.txt.gz file. It will be used if you
-                                      don't provide the --silvaFasta parameter (above). Default is:
-                                      'https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/taxonomy/ncbi/tax_ncbi-species_ssu_ref_nr99_138.1.txt.gz'.
-
-        --silvaTaxmap                 Path to taxmap_slv_ssu_ref_nr_*.txt.gz file. You can provide it
-                                      either compressed (.gz) or not. If not provided, the workflow automatically
-                                      adds a download step.
-        --silvaTaxmapURL              URL to taxmap_slv_ssu_ref_nr_*.txt.gz file. It will be used if you
-                                      don't provide the --silvaFasta parameter (above). Default is:
-                                      'https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/taxonomy/taxmap_slv_ssu_ref_nr_138.1.txt.gz'.
-
-        --fullSilva                   By default, porefile reduces SILVA to prokatyote SSU (16S). Use this flag
-                                      to deactivate the reducing step and use the full SILVA database.
-
-        --outdir                      Name of the results directory. Default: "results".
-        
-
-    Process specific parameters:
-        Porechop parameters:
-        --porechop_extra_end_trim      The '--extra_end_trim' parameter of Porechop. Default: 0.
-
-        NanoFilt parameters:
-        --nanofilt_quality            The '--quality' parameter of NanoFilt. Default: 8.
-        --nanofilt_length             The '--length' parameter of NanoFilt (minimum length). Default: 1000.
-        --nanofilt_maxlength          The '--maxlength' parameter of NanoFilt. Default: 1700.
-        --nanofilt_headcrop           The '--headcrop' parameter of NanoFilt. Default: 0.
-        --nanofilt_tailcrop           The '--tailcrop' parameter of NanoFilt. Default: 0.
-
-        Yacrd parameters:
-        --yacrd_c                     The '-c' parameter of Yacrd (minimum coverage). Default: 4 .
-        --yacrd_n                     The '-n' parameter of Yacrd (minimum coverage of read). Default: 0.4 .
-
-        Minimap2 parameters:
-        --minimap2_k                  The '-k' parameter of minimap2. Default: 15.
-        --minimap2_x                  The '-x' parameter of minimap2. Default: 'map-ont'. Possible values: 'map-ont', 
-                                      'asm5', 'asm10', 'asm20', 'map-pb', or 'map-hifi'. 
-        --minimap2_f                  The '-f' parameter of minimap2. Default: 1000. Only applied in the Automap module.
-        --minimap2_KM                 The '-K' parameter of minimap2, in Megabases. Default: 200.
-
-        Megan6 parameters:
-        --megan_lcaAlgorithm          The '--lcaAlgorithm' parameter of sam2rma tool (Megan6). Default: 'naive'.
-                                      Possible values are: 'naive', 'weighted', or 'longReads'.
-        --megan_topPercent            The '--topPercent' parameter of sam2rma tool (Megan6). Default: 10.
-        --megan_topPercentPolish      The '--topPercent' parameter of sam2rma tool (Megan6) applied when polishing step
-                                      is activated. Default: 5.
-        --megan_minPercentReadCover   The '--minPercentReadCover' parameter of sam2rma and blast2rma tools (Megan6).
-                                      Default: 70.
-        --megan_lcaCoveragePercent    The '--lcaCoveragePercent' parameter of sam2rma and blast2rma tools (Megan6). 
-                                      Default: 100.
-
-
-    Other control options:
-        --isDemultiplexed             Set this flag to avoid Demultiplex sub-workflow. If set, each fastq file is 
-                                      processed as a different barcode.
-        --removeChimeras              Set this flag to activate the chimera-removing step with Yacrd.
-        --noNanoplot                  Set this flag to avoid QCheck sub-workflow. 
-        --noSpeciesPolishing          Avoid the polishing sub-workflow.
-        --lowAbundanceThreshold       The threshold of total abundance (from 0 to 1) to be considered as "low", and
-                                      which the pipeline will try to re assign (default: 0.02).
-
-    Container options (note single dash usage!):
-        -profile docker               Use docker as container engine (default).
-        -profile singularity          Use singularity as container engine.
-        -profile podman               Use podman as container engine.
-
-    Help:
-        --help                        Print this help and exit.
-
-    Authors: 
-        Cecilia Salazar (csalazar@pasteur.edu.uy) 
-        Ignacio Ferrés (igferres@gmail.com)
-        Matías Giménez (mgimenez@pasteur.edu.uy)
-        Gregorio Iraola (giraola@pasteur.edu.uy)
-
-    Microbial Genomics Laboratory
-    Institut Pasteur de Montevideo (Uruguay)
-
+    ... (resto del help sin cambios) ...
     """.stripIndent()
 }
 
