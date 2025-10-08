@@ -135,51 +135,29 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-  script:
- 
-  process ExtractSpeciesSeqs {
-
-  tag "$sample_id"
-  publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
-
-  input:
-    tuple val(sample_id), path(fasta_file), path(readinfo_file)
-
-  output:
-    tuple val(sample_id), path("${sample_id}.species.fa")
-
-  script:
+  shell:
   '''
   set -euo pipefail
 
-  # 1) Extraer IDs de especie directamente con awk:
-  #    - Primera columna = ID de lectura
-  #    - Delimitador: coma, TAB o ';'
-  #    - Filas que contengan el flag [S]
-  #    - Saltar la cabecera (NR==1)
-  awk -v FS='[,\t;]' '
-    NR==1 { next }
-    /\[S\]/ {
-      id=$1
-      sub(/^>/,"",id)
-      gsub(/^[[:space:]]+|[[:space:]]+$/,"",id)
-      if (id!="") print id
-    }
-  ' "!{readinfo_file}" > species.ids
+  # 1) Extraer IDs con flag [S] desde el .read_info
+  #    - Asume TAB como delimitador
+  #    - La 1ª columna es el ID de lectura
+  awk -F "\\t" 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
+    "!{readinfo_file}" > species.ids
 
-  # Si no hay IDs, generamos archivo vacío y salimos limpio
+  # Si no hay IDs, generar archivo vacío y salir limpio
   if ! grep -qve '^\\s*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar FASTA por esos IDs (normalizando el header)
+  # 2) Filtrar el FASTA por esos IDs (normalizando encabezados)
   awk '
-    function norm(s, t){
+    function norm(s,t){
       t=s
-      sub(/[ \\t].*$/, "", t)   # corta en el primer espacio
-      sub(/\\|.*$/,   "", t)    # corta en el primer |
-      sub(/\\/.*$/,   "", t)    # corta en el primer /
+      sub(/[ \\t].*$/, "", t)   # corta en primer espacio
+      sub(/\\|.*$/,   "", t)    # corta en primer |
+      sub(/\\/.*$/,   "", t)    # corta en primer /
       return t
     }
     BEGIN{
@@ -203,13 +181,9 @@ process ExtractSpeciesSeqs {
   : > "!{sample_id}.species.fa"
 
   # Log de conteos
-  if [ -s species.ids ]; then
-    n_ids=$(grep -cvE "^\\s*$" species.ids || true)
-  else
-    n_ids=0
-  fi
+  n_ids=$(grep -cvE "^\\s*$" species.ids || true)
   n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
-  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" 1>&2
+  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" >&2
   '''
 }
 
