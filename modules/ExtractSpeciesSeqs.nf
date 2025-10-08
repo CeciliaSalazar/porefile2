@@ -1,3 +1,5 @@
+nextflow.enable.dsl = 2
+
 process ExtractSpeciesSeqs {
 
   tag "${sample_id}"
@@ -14,7 +16,6 @@ process ExtractSpeciesSeqs {
   set -euo pipefail
 
   # 1) Leer IDs con flag [S] del .read_info (tab-delimited; 1ª columna = read id)
-  #    Evitamos clases POSIX y usamos patrones simples para recortar espacios.
   awk -F '\t' 'NR==1{next} /\[S\]/{
       id=$1
       sub(/^>/,"",id)
@@ -29,7 +30,7 @@ process ExtractSpeciesSeqs {
     exit 0
   fi
 
-  # 2) Filtrar FASTA por IDs normalizando cabeceras (antes de espacio, '|' o '/')
+  # 2) Filtrar FASTA por IDs (normalizando cabeceras al token antes de espacio, '|' o '/')
   awk '
     function norm(s, t){
       t=s
