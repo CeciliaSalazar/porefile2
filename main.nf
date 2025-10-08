@@ -122,36 +122,38 @@ include {QCheck} from './workflows/QCheckWorkflow'
 // NUEVO: Extrae todas las lecturas con flag [S] (especie) y genera ${sample}.species.fa
 // El .read_info es tab-delimited, la primera columna es el read ID y alguna columna contiene "[S] ..."
 process ExtractSpeciesSeqs {
+ // Extract reads flagged at species level ([S]) from the .read_info (TAB-delimited; read id in col 1)
+process ExtractSpeciesSeqs {
   tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
 
   input:
-    tuple val(sample_id), path(fasta_file), path(readinfo_file)
+  tuple val(sample_id), path(fasta_file), path(readinfo_file)
 
   output:
-    tuple val(sample_id), path("${sample_id}.species.fa")
+  tuple val(sample_id), path("${sample_id}.species.fa")
 
   shell:
   '''
   set -euo pipefail
 
-  # 1) Extraer IDs con flag [S] del .read_info (ID en la primera columna, TAB-delimited)
-  awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); sub(/^[[:space:]]+/,"",id); sub(/[[:space:]]+$/,"",id); if(id!="") print id}' \
+  # 1) Read IDs with [S] flag from .read_info (tab-delimited; first column = read id)
+  awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); gsub(/^[[:space:]]+|[[:space:]]+$/,"",id); if(id!="") print id}' \
     "!{readinfo_file}" > species.ids
 
-  # Si no hay IDs, generar archivo vacío y salir sin error
+  # If no IDs, create empty output and exit cleanly
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar el FASTA por esos IDs (normalizando encabezados >readID ...)
+  # 2) Filter FASTA by those IDs (normalize headers to the token before space, | or /)
   awk '
-    function norm(s, t){
+    function norm(s,t){
       t=s
-      sub(/[ \\t].*$/, "", t)   # corta en el primer espacio
-      sub(/\\|.*$/,   "", t)    # corta en el primer |
-      sub(/\\/.*$/,   "", t)    # corta en el primer /
+      sub(/[ \t].*$/, "", t)
+      sub(/\|.*$/,   "", t)
+      sub(/\/.*$/,   "", t)
       return t
     }
     BEGIN{
@@ -163,7 +165,10 @@ process ExtractSpeciesSeqs {
       close("species.ids")
       keep=0
     }
-    /^>/{ hdr = substr($0,2); hnorm = norm(hdr); keep = (hnorm in ids) }
+    /^>/{
+      hdr  = substr($0,2)
+      keep = (norm(hdr) in ids)
+    }
     { if(keep) print $0 }
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
