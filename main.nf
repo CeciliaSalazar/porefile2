@@ -138,8 +138,8 @@ process ExtractSpeciesSeqs {
   '''
   set -euo pipefail
 
-  # Exportar la ruta para que Python la lea desde el entorno (evita problemas de expansión)
-  export READINFO="${readinfo_file}"
+  # Pasar la ruta del read_info a Python usando interpolación de Nextflow
+  export READINFO="!{readinfo_file}"
 
   # 1) Obtener IDs con rango species (autodetección de delimitador y columnas)
   python3 - << 'PY' > species.ids
@@ -218,10 +218,10 @@ PY
       keep = (curr in ids)
     }
     { if(keep) print $0 }
-  ' "${fasta_file}" > "${sample_id}.species.fa"
+  ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
   # Asegurar existencia del archivo (aunque esté vacío)
-  touch "${sample_id}.species.fa"
+  touch "!{sample_id}.species.fa"
   '''
 }
 
