@@ -53,7 +53,7 @@ def parameters_expected = [
   'outdir',
   'noSpeciesPolishing','no-species-polishing',
   'lowAbundanceThreshold','low-abundance-threshold',
-  'isDemultiplexed', 'is-demultiplexed', // This is because  https://github.com/nextflow-io/nextflow/issues/2061
+  'isDemultiplexed', 'is-demultiplexed',
   'porechop_extra_end_trim',
   'noNanoplot', 'no-nanoplot',
   'nanofilt_quality',
@@ -120,6 +120,102 @@ include {Demultiplex} from './workflows/Demultiplex'
 include {QFilt} from './workflows/QFiltWorkflow'
 include {QCheck} from './workflows/QCheckWorkflow'
 
+/*
+ * NUEVO: Extrae todas las lecturas clasificadas a nivel especie y genera ${sample}.species.fa
+ * Asume que el archivo read_info contiene columnas de ID (read_id/readid/id/read)
+ * y de rango (rank/tax_rank/level), y filtra filas cuyo rango sea "species".
+ */
+process ExtractSpeciesSeqs {
+  tag "$sample_id"
+
+  input:
+    tuple val(sample_id), path(fasta_file), path(readinfo_file)
+
+  output:
+    tuple val(sample_id), path("${sample_id}.species.fa")
+
+  shell:
+  '''
+  set -euo pipefail
+
+  # 1) Obtener IDs con rango species (autodetección de delimitador y columnas)
+  python3 - << 'PY' > species.ids
+import sys, csv, re
+
+readinfo = "${readinfo_file}"
+rank_headers = re.compile(r'^(rank|tax_?rank|level)$', re.IGNORECASE)
+species_pat  = re.compile(r'^species$', re.IGNORECASE)
+
+with open(readinfo, newline="") as f:
+    sample = f.read(2048)
+    f.seek(0)
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",\\t;")
+    except Exception:
+        class D(csv.Dialect):
+            delimiter="\\t"; quotechar='"'; doublequote=True; lineterminator="\\n"; skipinitialspace=True
+        dialect = D()
+    reader = csv.reader(f, dialect)
+    rows = list(reader)
+
+if not rows:
+    sys.exit(0)
+
+header = [h.strip() for h in rows[0]]
+hl = [h.lower() for h in header]
+
+# Columna de ID (prioriza campos habituales)
+id_idx = None
+for cand in ('read_id','readid','id','read'):
+    if cand in hl:
+        id_idx = hl.index(cand)
+        break
+if id_idx is None:
+    id_idx = 0  # fallback
+
+# Columna de RANK
+rank_idx = None
+for i,h in enumerate(header):
+    if rank_headers.match(h.strip()):
+        rank_idx = i
+        break
+if rank_idx is None:
+    rank_idx = 1 if len(header) > 1 else 0
+
+for row in rows[1:]:
+    if not row:
+        continue
+    try:
+        r = row[rank_idx].strip()
+    except IndexError:
+        continue
+    if species_pat.match(r):
+        try:
+            rid = row[id_idx].strip()
+        except IndexError:
+            continue
+        if rid:
+            print(rid)
+PY
+
+  # 2) Filtrar del FASTA solo esas lecturas (sin dependencias externas)
+  awk '
+    BEGIN{
+      while((getline line < "species.ids")>0){ids[line]=1}
+      close("species.ids")
+    }
+    /^>/{
+      split(substr($0,2), a, /[ \\t]/)
+      curr = a[1]
+      keep = (curr in ids)
+    }
+    { if(keep) print $0 }
+  ' "${fasta_file}" > "${sample_id}.species.fa"
+
+  # Asegurar existencia del archivo (aunque esté vacío)
+  touch "${sample_id}.species.fa"
+  '''
+}
 
 workflow {
   GetVersions()
@@ -131,23 +227,18 @@ workflow {
     SetSilva.out.synonyms
       .set{ silva_synonyms_ch }
 
-
   // Demultiplex if not already
   if (! params.isDemultiplexed ){
-    
     Demultiplex( fqs_ch )
     Demultiplex.out
       .flatten()
       .map { file -> tuple(file.baseName, file) }
       .set{ barcode_ch }
-
   } else {
-
     fqs_ch
       .flatten()
       .map { file -> tuple(file.baseName, file) }
       .set{ barcode_ch }
-
   }
 
   // Quality control sub-workflow
@@ -159,6 +250,7 @@ workflow {
 
   Fastq2Fasta( filtered_scrubbed_ch )
   Fastq2Fasta.out.set{ fasta_ch }
+
   MakeDB( silva_fasta_ch )
   Minimap2( fasta_ch, MakeDB.out )
   MeganLca( Minimap2.out, silva_synonyms_ch )
@@ -196,9 +288,20 @@ workflow {
   ComputeAbundances.out.taxcla
     .collectFile(storeDir: "$params.outdir/")
 
+  // NUEVO: Emparejar FASTA por muestra con read_info y extraer secuencias a nivel especie
+  fasta_ch
+    .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
+    .set{ fasta_readinfo_ch }
+
+  ExtractSpeciesSeqs( fasta_readinfo_ch )
+
+  ExtractSpeciesSeqs.out
+    .collectFile(storeDir: "$params.outdir/Species_Seqs") { sample_id, file ->
+      [ "${sample_id}.species.fa", file ]
+    }
+
   // Polish sub-Workflow
   if (!params.noSpeciesPolishing){
-
       Polish( 
         fasta_ch, 
         silva_fasta_ch, 
@@ -217,10 +320,9 @@ workflow {
         .collectFile(storeDir: "$params.outdir/"){
           file -> [ "TAXCLA_polished.tsv" , file ]
         }
-
   }
-
 }
+
 
 
 def sayHi(){
