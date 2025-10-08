@@ -442,28 +442,44 @@ def helpMessage() {
 def helloParameters(){
 
   log.info """  Nextflow-version:             $nextflow.version
-  Porefile-version:             $workflow.manifest.version
-  Porefile-commit:              $workflow.commitId
-  Porefile-branch:              $workflow.revision
-  Profile:                      $workflow.profile
-  Work directory:               $workflow.workDir
-  Container:                    $workflow.container
-  Input directory:              $params.fq
-  Output directory:             $params.outdir
-  Command:                      $workflow.commandLine
-  ⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
-  log.info """ Minimap2 related parameters:
-  --minimap2_k:                 $params.minimap2_k
-  --minimap2_f:                 $params.minimap2_f
-  --minimap2_x:                 $params.minimap2_x
-  --minimap2_KM:                $params.minimap2_KM
-⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
+  ...
+  """.stripIndent()
+
   log.info """ SILVAdb related parameters: """
-  if (file(params.silvaFasta).exists()){
+
+  // Antes: if (file(params.silvaFasta).exists()){
+  if (params.silvaFasta && new File(params.silvaFasta as String).exists()){
     log.info """  --silvaFasta:                 $params.silvaFasta"""
-  }else{
+  } else {
     log.info """ SILVAdb fasta file not provided. Download URL:
    --silvaFastaURL           $params.silvaFastaURL""".stripIndent()
   }
 
-  if (file(params
+  // Antes: if (file(params.silvaTaxNcbiSp).exists()){
+  if (params.silvaTaxNcbiSp && new File(params.silvaTaxNcbiSp as String).exists()){
+    log.info """  --silvaTaxNcbiSp:             $params.silvaTaxNcbiSp"""
+  } else {
+    log.info """SILVAdb tax_ncbi-species file not provided. Download URL:
+  --silvaTaxNcbiSpURL       $params.silvaTaxNcbiSpURL""".stripIndent()
+  }
+
+  // Antes: if (file(params.silvaTaxmap).exists()){
+  if (params.silvaTaxmap && new File(params.silvaTaxmap as String).exists()){
+    log.info """  --silvaTaxmap:                $params.silvaTaxmap"""
+  } else {
+    log.info """SILVAdb taxmap file not provided. Download URL:
+  --silvaTaxmapURL          $params.silvaTaxmapURL""".stripIndent()
+  }
+
+  if (params.fullSilva){
+    log.info """ Full SILVAdb selected:""".stripIndent()
+  } else {
+    log.info """ Reduce SILVAdb selected:""".stripIndent()
+  }
+  log.info """  --fullSilva:                  $params.fullSilva
+⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
+
+  log.info """ Other process parameters:
+  ...
+  """.stripIndent()
+}
