@@ -47,7 +47,7 @@ process ExtractSpeciesSeqs {
     { if(keep) print $0 }
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
-  # Log informativo
+  # Log
   n_ids=$(grep -cvE '^[[:space:]]*$' species.ids || true)
   n_seq=$(grep -c '^>' "!{sample_id}.species.fa" || true)
   echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" >&2
