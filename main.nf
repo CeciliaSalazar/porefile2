@@ -136,121 +136,40 @@ process ExtractSpeciesSeqs {
     tuple val(sample_id), path("${sample_id}.species.fa")
 
   shell:
+  shell:
   '''
   set -euo pipefail
 
-  # Pasar la ruta del read_info a Python usando interpolación de Nextflow
-  export READINFO="!{readinfo_file}"
+  # 1) Extraer IDs de especie directamente con awk:
+  #    - Primera columna = ID de lectura
+  #    - Delimitador: coma, TAB o punto y coma
+  #    - Filas que contengan el flag [S]
+  #    - Saltar la cabecera (NR==1)
+  awk -v FS='[,\t;]' '
+    NR==1 { next }
+    /\[S\]/ {
+      id=$1
+      sub(/^>/,"",id)
+      gsub(/^[[:space:]]+|[[:space:]]+$/,"",id)
+      if (id!="") print id
+    }
+  ' "!{readinfo_file}" > species.ids
 
-  # 1) Obtener IDs con rango species (autodetección de delimitador y columnas)
-  python3 - << 'PY' > species.ids
-import os, sys, csv, re
-
-readinfo = os.environ.get("READINFO")
-if not readinfo or not os.path.exists(readinfo):
-    sys.exit(0)
-
-# Detectar delimitador y cargar la tabla
-with open(readinfo, newline="") as f:
-    sample = f.read(2048)
-    f.seek(0)
-    try:
-        # permitir coma, TAB y punto y coma
-        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
-    except Exception:
-        class D(csv.Dialect):
-            delimiter="\\t"
-            quotechar='"'
-            doublequote=True
-            lineterminator="\\n"
-            skipinitialspace=True
-            quoting=csv.QUOTE_MINIMAL
-        dialect = D()
-    reader = csv.reader(f, dialect)
-    rows = list(reader)
-
-if not rows:
-    sys.exit(0)
-
-header = [h.strip() for h in rows[0]]
-hl = [h.lower() for h in header]
-
-# Columna de ID (alias comunes)
-id_idx = None
-for cand in ('read_id','readid','id','read','readname','name','qname','seqid','seq_id'):
-    if cand in hl:
-        id_idx = hl.index(cand); break
-if id_idx is None:
-    id_idx = 0  # fallback
-
-# Columna de RANK (si existe)
-rank_idx = None
-rank_pat = re.compile(r'^(rank|tax_?rank|level|lca_?rank|assigned_?rank|best_?rank)$', re.I)
-for i,h in enumerate(header):
-    if rank_pat.match(h.strip()):
-        rank_idx = i; break
-
-# Especie si rank == species o S
-is_species_rank = lambda s: bool(re.match(r'^species\b', (s or ''), re.I) or (s or '').strip().upper() == 'S')
-
-# Especie si aparece el flag "[S]" en cualquier columna (p. ej. "[S] Genus species")
-def has_S_flag(row):
-    for c in row:
-        if '[S]' in str(c):
-            return True
-    return False
-
-n = 0
-out = []
-for row in rows[1:]:
-    if not row:
-        continue
-
-    species_hit = False
-
-    # (1) rank explícito (si hay columna de rank)
-    if rank_idx is not None and rank_idx < len(row):
-        if is_species_rank(row[rank_idx]):
-            species_hit = True
-
-    # (2) flag [S] en cualquier columna
-    if not species_hit and has_S_flag(row):
-        species_hit = True
-
-    if not species_hit:
-        continue
-
-    # ID de lectura
-    rid = (row[id_idx] if id_idx < len(row) else '').strip()
-    if not rid:
-        continue
-    if rid.startswith('>'):
-        rid = rid[1:]
-    rid = rid.strip()
-    if rid:
-        out.append(rid)
-        n += 1
-
-for rid in out:
-    print(rid)
-
-print(f"#species_ids={n}", file=sys.stderr)
-
-PY
-
-  # Si no se detectaron IDs, asegurar archivo vacío y salir
+  # Si no se detectaron IDs, aseguramos archivo vacío y salimos limpio
   if ! grep -qve '^\\s*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar del FASTA con normalización de IDs
+  # 2) Filtrar del FASTA para esos IDs
+  #    - Normaliza ID del header: corta en el primer espacio, '|', o '/'
+  #    - Compara contra species.ids
   awk '
-    function norm(s,    t){
+    function norm(s, t){
       t=s
-      sub(/[ \\t].*$/, "", t)   # hasta el primer espacio
-      sub(/\\|.*$/,   "", t)    # hasta el primer |
-      sub(/\\/.*$/,   "", t)    # hasta el primer /
+      sub(/[ \\t].*$/, "", t)
+      sub(/\\|.*$/,   "", t)
+      sub(/\\/.*$/,   "", t)
       return t
     }
     BEGIN{
@@ -263,7 +182,7 @@ PY
       keep=0
     }
     /^>/{
-      hdr = substr($0,2)              # sin '>'
+      hdr = substr($0,2)
       hnorm = norm(hdr)
       keep = (hnorm in ids)
     }
@@ -271,7 +190,7 @@ PY
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
   # Asegurar existencia del archivo (aunque esté vacío)
-  touch "!{sample_id}.species.fa"
+  : > "!{sample_id}.species.fa"  # no hace daño si ya tiene contenido
 
   # Log: cuántas IDs y cuántas secuencias escritas
   if [ -s species.ids ]; then
@@ -282,7 +201,6 @@ PY
   n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
   echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" 1>&2
   '''
-}
 
 
 workflow {
