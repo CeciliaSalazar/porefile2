@@ -135,7 +135,7 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-  shell:
+   shell:
   '''
   set -euo pipefail
 
@@ -150,8 +150,9 @@ readinfo = os.environ.get("READINFO")
 if not readinfo or not os.path.exists(readinfo):
     sys.exit(0)
 
+# Aceptar rank "species", "Species (...)" o código "S"
 rank_headers = re.compile(r'^(rank|tax_?rank|level)$', re.IGNORECASE)
-species_start = re.compile(r'^species', re.IGNORECASE)  # acepta "species", "Species (…)", etc.
+is_species   = lambda s: bool(re.match(r'^species\\b', s, re.I) or s.strip().upper() == 'S')
 
 with open(readinfo, newline="") as f:
     sample = f.read(2048)
@@ -171,9 +172,9 @@ if not rows:
 header = [h.strip() for h in rows[0]]
 hl = [h.lower() for h in header]
 
-# Columna de ID (agrego 'readname' y 'name' como alternativas)
+# Columna de ID: considerar alias comunes
 id_idx = None
-for cand in ('read_id','readid','id','read','readname','name'):
+for cand in ('read_id','readid','id','read','readname','name','qname','seqid','seq_id'):
     if cand in hl:
         id_idx = hl.index(cand)
         break
@@ -187,8 +188,10 @@ for i,h in enumerate(header):
         rank_idx = i
         break
 if rank_idx is None:
-    rank_idx = 1 if len(header) > 1 else 0
+    # si no hay rank explícito, salir (no filtramos nada)
+    sys.exit(0)
 
+n = 0
 for row in rows[1:]:
     if not row:
         continue
@@ -196,33 +199,71 @@ for row in rows[1:]:
         r = row[rank_idx].strip()
     except IndexError:
         continue
-    if species_start.match(r):
+    if is_species(r):
         try:
             rid = row[id_idx].strip()
         except IndexError:
             continue
         if rid:
-            print(rid)
+            # quitar posible '>' y espacios
+            if rid.startswith('>'):
+                rid = rid[1:]
+            rid = rid.strip()
+            if rid:
+                print(rid)
+                n += 1
+
+# log a stderr para depuración
+print(f"#species_ids={n}", file=sys.stderr)
 PY
 
-  # 2) Filtrar del FASTA solo esas lecturas (sin dependencias externas)
+  # Si no se detectaron IDs, aseguramos un archivo vacío y salimos
+  if ! grep -qve '^\\s*$' species.ids 2>/dev/null; then
+    : > "!{sample_id}.species.fa"
+    exit 0
+  fi
+
+  # 2) Filtrar del FASTA con normalización de IDs
+  #    Normalizamos tanto el ID buscado como el del header FASTA:
+  #    - quitamos todo desde el primer espacio
+  #    - quitamos todo desde el primer '|' y '/'
   awk '
+    function norm(s,    t){
+      t=s
+      sub(/[ \\t].*$/, "", t)   # hasta el primer espacio
+      sub(/\\|.*$/,   "", t)    # hasta el primer |
+      sub(/\\/.*$/,   "", t)    # hasta el primer /
+      return t
+    }
     BEGIN{
-      while((getline line < "species.ids")>0){ids[line]=1}
+      while((getline line < "species.ids")>0){
+        if(line ~ /^\\s*$/) continue
+        id = norm(line)
+        ids[id]=1
+      }
       close("species.ids")
+      keep=0
     }
     /^>/{
-      split(substr($0,2), a, /[ \\t]/)
-      curr = a[1]
-      keep = (curr in ids)
+      hdr = substr($0,2)              # sin '>'
+      hnorm = norm(hdr)
+      keep = (hnorm in ids)
     }
     { if(keep) print $0 }
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
 
   # Asegurar existencia del archivo (aunque esté vacío)
   touch "!{sample_id}.species.fa"
+
+  # Log sencillo: cuántas IDs de especie y cuántas secuencias se escribieron
+  if [ -s species.ids ]; then
+    n_ids=$(grep -cvE "^\\s*$" species.ids || true)
+  else
+    n_ids=0
+  fi
+  n_seq=$(grep -c "^>" "!{sample_id}.species.fa" || true)
+  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=$n_ids sequences_written=$n_seq" 1>&2
   '''
-}
 
 
 workflow {
