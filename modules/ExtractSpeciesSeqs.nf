@@ -13,70 +13,56 @@ process ExtractSpeciesSeqs {
   '''
   set -euo pipefail
 
-  # 1) Extract species-level read IDs from .read_info
-  #    - Accept TAB, comma, or semicolon as separators
-  #    - First column = read id
-  #    - Line contains [S] anywhere
-  #    - Skip header (NR==1)
-  awk -F '[\\t,;]' '
-    BEGIN{ OFS="\\t" }
+  # 1) Extraer IDs a nivel especie desde .read_info (TAB-delimited)
+  #    - Col 1 = read_id
+  #    - Col 2 = rank (letra); especie si $2 == "S"
+  #    - O si la línea contiene "[S]" en cualquier parte
+  #    - Saltar cabecera (NR==1)
+  awk -F '\t' '
     NR==1 { next }
-    {
-      line=$0
-      gsub(/\r/,"",line)   # strip CR if present
-      if (index(line,"[S]")) {
-        id=$1
-        sub(/^>/,"",id)
-        gsub(/^[ \\t]+|[ \\t]+$/,"",id)
-        if (id != "") print id
-      }
+    ($2=="S") || (index($0,"[S]")>0) {
+      id=$1
+      sub(/^>/,"",id)
+      gsub(/^[ \t]+|[ \t]+$/,"",id)
+      if (id!="") print id
     }
   ' "!{readinfo_file}" > species.ids
 
-  # Save a copy of the raw ID list for debugging/inspection
-  cp species.ids "!{sample_id}.species.ids"
+  # Copia para depurar (opcional)
+  cp species.ids "!{sample_id}.species.ids" || true
 
-  # If there are no IDs, emit empty fasta and exit cleanly
+  # Si no hay IDs, salida vacía y terminar limpio
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
-    echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=0 sequences_written=0 (no [S] in read_info)" >&2
+    echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=0 sequences_written=0 (no species-level)" >&2
     exit 0
   fi
 
-  # 2) Filter FASTA using normalized matching
-  #    Normalization rules for both ID list and FASTA headers:
-  #      - trim spaces
-  #      - drop leading '>'
-  #      - cut at first space, then at first '|' and at first '/'
-  #      - drop trailing .<digits> (e.g. .1)
+  # 2) Filtrar FASTA usando normalización de headers
   awk '
     function norm_once(s) {
-      gsub(/^[ \\t]+|[ \\t]+$/, "", s);
+      gsub(/^[ \t]+|[ \t]+$/, "", s);
       sub(/^>/, "", s);
-      sub(/[ \\t].*$/, "", s);
-      sub(/\\|.*$/, "", s);
-      sub(/\\/.*$/, "", s);
-      sub(/\\.[0-9]+$/, "", s);
+      sub(/[ \t].*$/, "", s);
+      sub(/\|.*$/, "", s);
+      sub(/\/.*$/, "", s);
+      sub(/\.[0-9]+$/, "", s);
       return s;
     }
-    function norm(s) {
-      # apply twice to be safe on odd headers
-      return norm_once(norm_once(s));
-    }
+    function norm(s) { return norm_once(norm_once(s)); }
+
     BEGIN{
-      n_ids=0;
       while ( (getline line < "species.ids") > 0 ) {
-        if (line ~ /^[ \\t]*$/) continue;
+        if (line ~ /^[ \t]*$/) continue;
         id = norm(line);
-        if (id!="") { ids[id]=1; n_ids++; }
+        if (id!="") ids[id]=1;
       }
       close("species.ids");
       keep=0;
     }
     /^>/{
       hdr = substr($0,2);
-      h = norm(hdr);
-      keep = (h in ids);
+      keep = (norm(hdr) in ids);
     }
     { if (keep) print $0 }
   ' "!{fasta_file}" > "!{sample_id}.species.fa"
