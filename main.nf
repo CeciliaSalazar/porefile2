@@ -155,10 +155,16 @@ with open(readinfo, newline="") as f:
     sample = f.read(2048)
     f.seek(0)
     try:
+        # permitir coma, TAB y punto y coma
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
     except Exception:
         class D(csv.Dialect):
-            delimiter="\t"; quotechar='"'; doublequote=True; lineterminator="\n"; skipinitialspace=True
+            delimiter="\\t"
+            quotechar='"'
+            doublequote=True
+            lineterminator="\\n"
+            skipinitialspace=True
+            quoting=csv.QUOTE_MINIMAL
         dialect = D()
     reader = csv.reader(f, dialect)
     rows = list(reader)
@@ -187,7 +193,7 @@ for i,h in enumerate(header):
 # Especie si rank == species o S
 is_species_rank = lambda s: bool(re.match(r'^species\b', (s or ''), re.I) or (s or '').strip().upper() == 'S')
 
-# NUEVO: especie si aparece el flag "[S]" en cualquier columna (p. ej. "[S] Genus species")
+# Especie si aparece el flag "[S]" en cualquier columna (p. ej. "[S] Genus species")
 def has_S_flag(row):
     for c in row:
         if '[S]' in str(c):
