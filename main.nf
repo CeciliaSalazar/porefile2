@@ -138,20 +138,18 @@ process ExtractSpeciesSeqs {
   '''
   set -euo pipefail
 
-  # 1) IDs de especie desde .read_info
-  #    - Delim: TAB (ajusta si fuera necesario)
-  #    - Flag: [S]
-  #    - ID está en la 1a columna
+  # 1) Extraer IDs con flag [S] del .read_info (ID en la primera columna)
+  #    Ajusta -F si tu archivo no es tab-delimited.
   awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); sub(/^[[:space:]]+/,"",id); sub(/[[:space:]]+$/,"",id); if(id!="") print id}' \
     "!{readinfo_file}" > species.ids
 
-  # Si no hay IDs, crear archivo vacío y salir limpio
+  # Si no hay IDs, generar archivo vacío y salir sin error
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar FASTA por esos IDs (normalizando encabezados)
+  # 2) Filtrar el FASTA con normalización del encabezado (>readID ...)
   awk '
     function norm(s, t){
       t=s
