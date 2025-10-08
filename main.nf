@@ -1,5 +1,4 @@
 #!/usr/bin/env nextflow
-
 nextflow.enable.dsl = 2
 
 params.fq = "*.fastq"
@@ -49,7 +48,7 @@ if (params.help) {
 // Validation of parameters
 def parameters_expected = [
   'help',
-  'fq',
+  'fq', 
   'outdir',
   'noSpeciesPolishing','no-species-polishing',
   'lowAbundanceThreshold','low-abundance-threshold',
@@ -120,10 +119,8 @@ include {Demultiplex} from './workflows/Demultiplex'
 include {QFilt} from './workflows/QFiltWorkflow'
 include {QCheck} from './workflows/QCheckWorkflow'
 
-/*
- * Extrae lecturas clasificadas a nivel especie (flag "[S]" en .read_info)
- * y genera ${sample}.species.fa. Asume .read_info TAB-delimitado con ID en 1ª columna.
- */
+// NUEVO: Extrae todas las lecturas con flag [S] (especie) y genera ${sample}.species.fa
+// El .read_info es tab-delimited, la primera columna es el read ID y alguna columna contiene "[S] ..."
 process ExtractSpeciesSeqs {
   tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
@@ -138,8 +135,7 @@ process ExtractSpeciesSeqs {
   '''
   set -euo pipefail
 
-  # 1) Extraer IDs con flag [S] del .read_info (ID en la primera columna)
-  #    Ajusta -F si tu archivo no es tab-delimited.
+  # 1) Extraer IDs con flag [S] del .read_info (ID en la primera columna, TAB-delimited)
   awk -F '\t' 'NR==1{next} /\[S\]/{id=$1; sub(/^>/,"",id); sub(/^[[:space:]]+/,"",id); sub(/[[:space:]]+$/,"",id); if(id!="") print id}' \
     "!{readinfo_file}" > species.ids
 
@@ -149,13 +145,13 @@ process ExtractSpeciesSeqs {
     exit 0
   fi
 
-  # 2) Filtrar el FASTA con normalización del encabezado (>readID ...)
+  # 2) Filtrar el FASTA por esos IDs (normalizando encabezados >readID ...)
   awk '
     function norm(s, t){
       t=s
-      sub(/[ \t].*$/, "", t)   # corta en el primer espacio
-      sub(/\|.*$/,   "", t)    # corta en el primer |
-      sub(/\/.*$/,   "", t)    # corta en el primer /
+      sub(/[ \\t].*$/, "", t)   # corta en el primer espacio
+      sub(/\\|.*$/,   "", t)    # corta en el primer |
+      sub(/\\/.*$/,   "", t)    # corta en el primer /
       return t
     }
     BEGIN{
@@ -227,7 +223,7 @@ workflow {
   // Publish read taxonomy assignments
   base_read_assingments_ch
       .collectFile(storeDir: "$params.outdir/Read_Assignments") {
-          val, file ->
+          val, file -> 
           [ "${val}.read_info" , file ]
       }
 
@@ -236,11 +232,11 @@ workflow {
     .map{val, file -> file}
     .collect()
     .set{ all_read_assignments }
-
-  ComputeAbundances(
-    all_read_assignments,
-    silva_synonyms_ch,
-    !params.noSpeciesPolishing
+  
+  ComputeAbundances( 
+    all_read_assignments, 
+    silva_synonyms_ch, 
+    !params.noSpeciesPolishing 
   )
 
   // Publish taxa counts and classification
@@ -263,13 +259,13 @@ workflow {
 
   // Polish sub-Workflow
   if (!params.noSpeciesPolishing){
-      Polish(
-        fasta_ch,
-        silva_fasta_ch,
-        silva_synonyms_ch,
+      Polish( 
+        fasta_ch, 
+        silva_fasta_ch, 
+        silva_synonyms_ch, 
         base_read_assingments_ch,
         ComputeAbundances.out.silva_ids,
-        ComputeAbundances.out.read_ids
+        ComputeAbundances.out.read_ids 
       )
 
       // Publish polished taxa counts and classification
@@ -396,7 +392,6 @@ def helpMessage() {
 }
 
 def helloParameters(){
-
   log.info """  Nextflow-version:             $nextflow.version
   Porefile-version:             $workflow.manifest.version
   Porefile-commit:              $workflow.commitId
@@ -443,7 +438,6 @@ def helloParameters(){
   }
   log.info """  --fullSilva:                  $params.fullSilva
 ⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
-
   log.info """ Other process parameters:
 Data is already demultiplexed?
   --isDemultiplexed:            $params.isDemultiplexed
