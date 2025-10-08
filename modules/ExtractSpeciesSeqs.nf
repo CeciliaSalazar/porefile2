@@ -73,3 +73,5 @@ AWK
   echo "[ExtractSpeciesSeqs] sample=${sample_id} species_ids=${n_ids} sequences_written=${n_seq}" >&2
   """
 }
+
+# paste the code block above here EXACTLY
