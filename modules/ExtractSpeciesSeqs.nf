@@ -1,4 +1,4 @@
-process 'ExtractSpeciesSeqs' {
+process ExtractSpeciesSeqs {
 
   tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
@@ -13,17 +13,17 @@ process 'ExtractSpeciesSeqs' {
   '''
   set -euo pipefail
 
-  # 1) IDs con flag [S] desde .read_info (TAB-delimited; col 1 = read id)
+  # 1) Read IDs with [S] flag from .read_info (TAB-delimited; first column = read id)
   awk -F '\t' 'NR>1 && index($0,"[S]"){ id=$1; sub(/^>/,"",id); gsub(/^[ \t]+|[ \t]+$/,"",id); if(id!="") print id }' \
     "!{readinfo_file}" > species.ids
 
-  # Si no hay IDs, crear salida vacía y terminar sin error
+  # If no IDs, create empty output and exit cleanly
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
     : > "!{sample_id}.species.fa"
     exit 0
   fi
 
-  # 2) Filtrar FASTA por esos IDs (normalizando encabezados)
+  # 2) Filter FASTA by those IDs (normalize headers to the token before space, | or /)
   awk '
     function norm(s) {
       gsub(/[ \t].*$/, "", s);
