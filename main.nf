@@ -150,18 +150,15 @@ readinfo = os.environ.get("READINFO")
 if not readinfo or not os.path.exists(readinfo):
     sys.exit(0)
 
-# Aceptar rank "species", "Species (...)" o código "S"
-rank_headers = re.compile(r'^(rank|tax_?rank|level)$', re.IGNORECASE)
-is_species   = lambda s: bool(re.match(r'^species\\b', s, re.I) or s.strip().upper() == 'S')
-
+# Detectar delimitador y cargar la tabla
 with open(readinfo, newline="") as f:
     sample = f.read(2048)
     f.seek(0)
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",\\t;")
+        dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
     except Exception:
         class D(csv.Dialect):
-            delimiter="\\t"; quotechar='"'; doublequote=True; lineterminator="\\n"; skipinitialspace=True
+            delimiter="\t"; quotechar='"'; doublequote=True; lineterminator="\n"; skipinitialspace=True
         dialect = D()
     reader = csv.reader(f, dialect)
     rows = list(reader)
@@ -172,46 +169,67 @@ if not rows:
 header = [h.strip() for h in rows[0]]
 hl = [h.lower() for h in header]
 
-# Columna de ID: alias comunes
+# Columna de ID (alias comunes)
 id_idx = None
 for cand in ('read_id','readid','id','read','readname','name','qname','seqid','seq_id'):
     if cand in hl:
-        id_idx = hl.index(cand)
-        break
+        id_idx = hl.index(cand); break
 if id_idx is None:
     id_idx = 0  # fallback
 
-# Columna de RANK
+# Columna de RANK (si existe)
 rank_idx = None
+rank_pat = re.compile(r'^(rank|tax_?rank|level|lca_?rank|assigned_?rank|best_?rank)$', re.I)
 for i,h in enumerate(header):
-    if rank_headers.match(h.strip()):
-        rank_idx = i
-        break
-if rank_idx is None:
-    sys.exit(0)
+    if rank_pat.match(h.strip()):
+        rank_idx = i; break
+
+# Especie si rank == species o S
+is_species_rank = lambda s: bool(re.match(r'^species\b', (s or ''), re.I) or (s or '').strip().upper() == 'S')
+
+# NUEVO: especie si aparece el flag "[S]" en cualquier columna (p. ej. "[S] Genus species")
+def has_S_flag(row):
+    for c in row:
+        if '[S]' in str(c):
+            return True
+    return False
 
 n = 0
+out = []
 for row in rows[1:]:
     if not row:
         continue
-    try:
-        r = row[rank_idx].strip()
-    except IndexError:
+
+    species_hit = False
+
+    # (1) rank explícito (si hay columna de rank)
+    if rank_idx is not None and rank_idx < len(row):
+        if is_species_rank(row[rank_idx]):
+            species_hit = True
+
+    # (2) flag [S] en cualquier columna
+    if not species_hit and has_S_flag(row):
+        species_hit = True
+
+    if not species_hit:
         continue
-    if is_species(r):
-        try:
-            rid = row[id_idx].strip()
-        except IndexError:
-            continue
-        if rid:
-            if rid.startswith('>'):
-                rid = rid[1:]
-            rid = rid.strip()
-            if rid:
-                print(rid)
-                n += 1
+
+    # ID de lectura
+    rid = (row[id_idx] if id_idx < len(row) else '').strip()
+    if not rid:
+        continue
+    if rid.startswith('>'):
+        rid = rid[1:]
+    rid = rid.strip()
+    if rid:
+        out.append(rid)
+        n += 1
+
+for rid in out:
+    print(rid)
 
 print(f"#species_ids={n}", file=sys.stderr)
+
 PY
 
   # Si no se detectaron IDs, asegurar archivo vacío y salir
