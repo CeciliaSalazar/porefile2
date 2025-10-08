@@ -135,7 +135,7 @@ process ExtractSpeciesSeqs {
   output:
     tuple val(sample_id), path("${sample_id}.species.fa")
 
-  shell:
+  script:
  
   '''
   set -euo pipefail
