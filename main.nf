@@ -46,16 +46,18 @@ if (params.help) {
     exit 0
 }
 
-// Validation of parameters
+// --- Validación de parámetros ---
+// Nota: en Nextflow los nombres de parámetros deben ser identificadores válidos (sin guiones).
+// Por eso se eliminan los alias "con guiones" para evitar falsos errores de validación.
 def parameters_expected = [
   'help',
   'fq', 
   'outdir',
-  'noSpeciesPolishing','no-species-polishing',
-  'lowAbundanceThreshold','low-abundance-threshold',
-  'isDemultiplexed', 'is-demultiplexed',
+  'noSpeciesPolishing',
+  'lowAbundanceThreshold',
+  'isDemultiplexed',
   'porechop_extra_end_trim',
-  'noNanoplot', 'no-nanoplot',
+  'noNanoplot',
   'nanofilt_quality',
   'nanofilt_length',
   'nanofilt_maxlength',
@@ -63,24 +65,24 @@ def parameters_expected = [
   'nanofilt_tailcrop',
   'yacrd_c',
   'yacrd_n',
-  'removeChimeras', 'remove-chimeras',
-  'megan_lcaAlgorithm', 'megan_lca-algorithm',
-  'megan_lcaCoveragePercent', 'megan_lca-coverage-percent',
-  'megan_topPercent', 'megan_top-percent',
-  'megan_topPercentPolish', 'megan_top-percent-polish',
-  'megan_minPercentReadCover', 'megan_min-percent-read-cover',
+  'removeChimeras',
+  'megan_lcaAlgorithm',
+  'megan_lcaCoveragePercent',
+  'megan_topPercent',
+  'megan_topPercentPolish',
+  'megan_minPercentReadCover',
   'minimap2_k',
   'minimap2_f',
   'minimap2_x',
   'minimap2_KM',
-  'silvaFasta', 'silva-fasta',
-  'silvaTaxNcbiSp', 'silva-tax-ncbi-sp',
-  'silvaTaxmap', 'silva-taxmap',
-  'silvaFastaURL', 'silva-fasta-URL',
-  'silvaTaxNcbiSpURL', 'silva-tax-ncbi-sp-URL',
-  'silvaTaxmapURL', 'silva-taxmap-URL',
-  'fullSilva', 'full-silva'
-  ] as Set
+  'silvaFasta',
+  'silvaTaxNcbiSp',
+  'silvaTaxmap',
+  'silvaFastaURL',
+  'silvaTaxNcbiSpURL',
+  'silvaTaxmapURL',
+  'fullSilva'
+] as Set
 
 def parameter_diff = params.keySet() - parameters_expected
 if (parameter_diff.size() != 0){
@@ -90,18 +92,18 @@ if (parameter_diff.size() != 0){
 helloParameters()
 
 if (! params.fq ){
-  println("You must provide at least 1 fastq file using --fq flag.")
+  println("You must provide at least 1 FASTQ file using --fq flag.")
   System.exit(1)
 }
 
 if (!["naive", "weighted", "longReads"].contains(params.megan_lcaAlgorithm)){
-  println("lcaAlgorithm not valid, must be one of 'naive', 'weighted', or 'longReads'")
+  println("Parameter error: --megan_lcaAlgorithm must be one of 'naive', 'weighted', or 'longReads'")
   System.exit(1)
 }
 
 Channel
   .fromPath(params.fq, checkIfExists: true)
-  .ifEmpty { exit 1, "Non fastq files found: ${params.fq}" }
+  .ifEmpty { exit 1, "No FASTQ files found with pattern: ${params.fq}" }
   .set{ fqs_ch }
 
 // include modules
@@ -368,7 +370,7 @@ def helpMessage() {
                                       don't provide the --silvaFasta parameter (above). Default is:
                                       'https://www.arb-silva.de/fileadmin/silva_databases/current/Exports/taxonomy/taxmap_slv_ssu_ref_nr_138.1.txt.gz'.
 
-        --fullSilva                   By default, porefile reduces SILVA to prokatyote SSU (16S). Use this flag
+        --fullSilva                   By default, porefile reduces SILVA to prokaryote SSU (16S). Use this flag
                                       to deactivate the reducing step and use the full SILVA database.
 
         --outdir                      Name of the results directory. Default: "results".
@@ -376,10 +378,10 @@ def helpMessage() {
 
     Process specific parameters:
         Porechop parameters:
-        --porechop_extra_end_trim      The '--extra_end_trim' parameter of Porechop. Default: 0.
+        --porechop_extra_end_trim     The '--extra_end_trim' parameter of Porechop. Default: 0.
 
         NanoFilt parameters:
-        --nanofilt_quality            The '--quality' parameter of NanoFilt. Default: 8.
+        --nanofilt_quality            The '--quality' parameter of NanoFilt. Default: 10.
         --nanofilt_length             The '--length' parameter of NanoFilt (minimum length). Default: 1000.
         --nanofilt_maxlength          The '--maxlength' parameter of NanoFilt. Default: 1700.
         --nanofilt_headcrop           The '--headcrop' parameter of NanoFilt. Default: 0.
@@ -407,7 +409,6 @@ def helpMessage() {
         --megan_lcaCoveragePercent    The '--lcaCoveragePercent' parameter of sam2rma and blast2rma tools (Megan6). 
                                       Default: 100.
 
-
     Other control options:
         --isDemultiplexed             Set this flag to avoid Demultiplex sub-workflow. If set, each fastq file is 
                                       processed as a different barcode.
@@ -415,7 +416,7 @@ def helpMessage() {
         --noNanoplot                  Set this flag to avoid QCheck sub-workflow. 
         --noSpeciesPolishing          Avoid the polishing sub-workflow.
         --lowAbundanceThreshold       The threshold of total abundance (from 0 to 1) to be considered as "low", and
-                                      which the pipeline will try to re assign (default: 0.02).
+                                      which the pipeline will try to re-assign (default: 0.02).
 
     Container options (note single dash usage!):
         -profile docker               Use docker as container engine (default).
@@ -465,44 +466,4 @@ def helloParameters(){
    --silvaFastaURL           $params.silvaFastaURL""".stripIndent()
   }
 
-  if (file(params.silvaTaxNcbiSp).exists()){
-    log.info """  --silvaTaxNcbiSp:             $params.silvaTaxNcbiSp"""
-  }else{
-    log.info """SILVAdb tax_ncbi-species file not provided. Download URL:
-  --silvaTaxNcbiSpURL       $params.silvaTaxNcbiSpURL""".stripIndent()
-  }
-
-  if (file(params.silvaTaxmap).exists()){
-    log.info """  --silvaTaxmap:                $params.silvaTaxmap"""
-  }else{
-    log.info """SILVAdb taxmap file not provided. Download URL:
-  --silvaTaxmapURL          $params.silvaTaxmapURL""".stripIndent()
-  }
-
-  if (params.fullSilva){
-    log.info """ Full SILVAdb selected:""".stripIndent()
-  }else{
-    log.info """ Reduce SILVAdb selected:""".stripIndent()
-  }
-  log.info """  --fullSilva:                  $params.fullSilva
-⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
-
-  log.info """ Other process parameters:
-Data is already demultiplexed?
-  --isDemultiplexed:            $params.isDemultiplexed
-Porechop
-  --porechop_extra_end_trim:    $params.porechop_extra_end_trim
-NanoFilt
-  --nanofilt_quality:           $params.nanofilt_quality
-  --nanofilt_length:            $params.nanofilt_length
-  --nanofilt_maxlength:         $params.nanofilt_maxlength
-  --nanofilt_headcrop:          $params.nanofilt_headcrop
-  --nanofilt_tailcrop:          $params.nanofilt_tailcrop
-Yacrd
-  --removeChimeras:             $params.removeChimeras
-  --yacrd_c:                    $params.yacrd_c
-  --yacrd_n:                    $params.yacrd_n
-NanoPlot
-  --noNanoplot:                 $params.noNanoplot
-⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻⎻""".stripIndent()
-}
+  if (file(params
