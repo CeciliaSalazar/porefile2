@@ -195,9 +195,9 @@ workflow {
   ComputeAbundances.out.counts .collectFile(storeDir: "$params.outdir/")
   ComputeAbundances.out.taxcla .collectFile(storeDir: "$params.outdir/")
 
-  // Pair FASTA with read_info and extract species-level sequences
+ // === NUEVO BLOQUE: emparejar FASTA con read_info y extraer secuencias a nivel especie ===
   fasta_ch
-    .join(base_read_assingments_ch)          // -> (sample_id, fasta_file, readinfo_file)
+    .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
     .set{ fasta_readinfo_ch }
 
   ExtractSpeciesSeqs( fasta_readinfo_ch )
@@ -206,6 +206,9 @@ workflow {
     .collectFile(storeDir: "$params.outdir/Species_Seqs") { sample_id, file ->
       [ "${sample_id}.species.fa", file ]
     }
+  // === FIN BLOQUE NUEVO ===
+
+
 
   // Polish sub-Workflow
   if ( !params.noSpeciesPolishing ){
