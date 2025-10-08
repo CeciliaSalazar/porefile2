@@ -16,12 +16,13 @@ process ExtractSpeciesSeqs {
    *   col2 = rank letter (S/G/F/...)
    *   later columns contain taxonomy and may include "[S] Genus species"
    */
+
   script:
-  """
+  '''
   set -euo pipefail
 
   # 1) Collect species-level IDs: rank letter 'S' OR line contains "[S]"
-  awk -f /dev/stdin "${readinfo_file}" > species.ids <<'AWK'
+  awk -f /dev/stdin "!{readinfo_file}" > species.ids <<'AWK'
   BEGIN { FS = "\t"; OFS = "\t" }
   NR==1 { next }
   ($2 == "S") || (index($0,"[S]") > 0) {
@@ -34,13 +35,13 @@ AWK
 
   # If no IDs, emit empty fasta and exit cleanly
   if ! grep -qve '^[[:space:]]*$' species.ids 2>/dev/null; then
-    : > "${sample_id}.species.fa"
-    echo "[ExtractSpeciesSeqs] sample=${sample_id} species_ids=0 sequences_written=0 (no species-level)" >&2
+    : > "!{sample_id}.species.fa"
+    echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=0 sequences_written=0 (no species-level)" >&2
     exit 0
   fi
 
   # 2) Filter FASTA by normalized headers
-  awk -f /dev/stdin "${fasta_file}" > "${sample_id}.species.fa" <<'AWK'
+  awk -f /dev/stdin "!{fasta_file}" > "!{sample_id}.species.fa" <<'AWK'
   function norm_once(s) {
     gsub(/^[ \t]+|[ \t]+$/, "", s)
     sub(/^>/, "", s)
@@ -69,9 +70,7 @@ AWK
 AWK
 
   n_ids=$(grep -cvE '^[[:space:]]*$' species.ids || true)
-  n_seq=$(grep -c '^>' "${sample_id}.species.fa" || true)
-  echo "[ExtractSpeciesSeqs] sample=${sample_id} species_ids=${n_ids} sequences_written=${n_seq}" >&2
-  """
+  n_seq=$(grep -c '^>' "!{sample_id}.species.fa" || true)
+  echo "[ExtractSpeciesSeqs] sample=!{sample_id} species_ids=${n_ids} sequences_written=${n_seq}" >&2
+  '''
 }
-
-# paste the code block above here EXACTLY
