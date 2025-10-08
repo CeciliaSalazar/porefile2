@@ -48,7 +48,7 @@ if (params.help) {
 // Validation of parameters
 def parameters_expected = [
   'help',
-  'fq', 
+  'fq',
   'outdir',
   'noSpeciesPolishing','no-species-polishing',
   'lowAbundanceThreshold','low-abundance-threshold',
@@ -79,7 +79,7 @@ def parameters_expected = [
   'silvaTaxNcbiSpURL', 'silva-tax-ncbi-sp-URL',
   'silvaTaxmapURL', 'silva-taxmap-URL',
   'fullSilva', 'full-silva'
-  ] as Set
+] as Set
 
 def parameter_diff = params.keySet() - parameters_expected
 if (parameter_diff.size() != 0){
@@ -119,10 +119,7 @@ include {Demultiplex} from './workflows/Demultiplex'
 include {QFilt} from './workflows/QFiltWorkflow'
 include {QCheck} from './workflows/QCheckWorkflow'
 
-// NUEVO: Extrae todas las lecturas con flag [S] (especie) y genera ${sample}.species.fa
-// El .read_info es tab-delimited, la primera columna es el read ID y alguna columna contiene "[S] ..."
-process ExtractSpeciesSeqs {
- // Extract reads flagged at species level ([S]) from the .read_info (TAB-delimited; read id in col 1)
+// Extract reads flagged at species level ([S]) from the .read_info (TAB-delimited; read id in col 1)
 process ExtractSpeciesSeqs {
   tag "${sample_id}"
   publishDir "${params.outdir}/Species_Seqs", mode: 'copy'
@@ -228,7 +225,7 @@ workflow {
   // Publish read taxonomy assignments
   base_read_assingments_ch
       .collectFile(storeDir: "$params.outdir/Read_Assignments") {
-          val, file -> 
+          val, file ->
           [ "${val}.read_info" , file ]
       }
 
@@ -237,11 +234,11 @@ workflow {
     .map{val, file -> file}
     .collect()
     .set{ all_read_assignments }
-  
-  ComputeAbundances( 
-    all_read_assignments, 
-    silva_synonyms_ch, 
-    !params.noSpeciesPolishing 
+
+  ComputeAbundances(
+    all_read_assignments,
+    silva_synonyms_ch,
+    !params.noSpeciesPolishing
   )
 
   // Publish taxa counts and classification
@@ -250,7 +247,7 @@ workflow {
   ComputeAbundances.out.taxcla
     .collectFile(storeDir: "$params.outdir/")
 
-  // Emparejar FASTA por muestra con read_info y extraer secuencias a nivel especie
+  // Pair FASTA with read_info and extract species-level sequences
   fasta_ch
     .join(base_read_assingments_ch)          // -> tuple(sample_id, fasta_file, readinfo_file)
     .set{ fasta_readinfo_ch }
@@ -264,13 +261,13 @@ workflow {
 
   // Polish sub-Workflow
   if (!params.noSpeciesPolishing){
-      Polish( 
-        fasta_ch, 
-        silva_fasta_ch, 
-        silva_synonyms_ch, 
+      Polish(
+        fasta_ch,
+        silva_fasta_ch,
+        silva_synonyms_ch,
         base_read_assingments_ch,
         ComputeAbundances.out.silva_ids,
-        ComputeAbundances.out.read_ids 
+        ComputeAbundances.out.read_ids
       )
 
       // Publish polished taxa counts and classification
